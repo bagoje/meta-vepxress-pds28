@@ -879,10 +879,10 @@ index ffce287ef415..13485aeb5061 100644
 +obj-$(CONFIG_PDS28_MMS)		+= pds28-mms.o
 diff --git a/drivers/char/pds28-mms.c b/drivers/char/pds28-mms.c
 new file mode 100644
-index 000000000000..6a09b023aaec
+index 000000000000..20dc72ac27c0
 --- /dev/null
 +++ b/drivers/char/pds28-mms.c
-@@ -0,0 +1,469 @@
+@@ -0,0 +1,464 @@
 +/* pds28-mms.c */
 +
 +#include <linux/init.h>
@@ -895,20 +895,21 @@ index 000000000000..6a09b023aaec
 +#include <linux/platform_device.h>
 +#include <linux/of.h>
 +#include <linux/string.h>
++#include <linux/poll.h>
 +
 +#define DEVICE_FILE_NAME	"pds28mms"
 +#define DRIVER_NAME		"pds28mmsdrv"
 +
-+#define MMS_CTRL_OFFSET	(0x00)
++#define MMS_CTRL_OFFSET		(0x00)
 +#define MMS_STATUS_OFFSET	(0x04)
-+#define MMS_DATA_OFFSET	(0x08)
++#define MMS_DATA_OFFSET		(0x08)
 +
 +#define CTRL_EN_MASK		(0x10000000)
 +#define CTRL_IEN_MASK		(0x20000000)
 +#define CTRL_RES_MASK		(0x40000000)
 +#define CTRL_FREQ_MASK		(0x80000000)
 +
-+#define STATUS_IFG_MASK	(0x20000000)
++#define STATUS_IFG_MASK		(0x20000000)
 +#define DATA_MASK		(0x0000FFFF)
 +
 +/**
@@ -927,10 +928,14 @@ index 000000000000..6a09b023aaec
 +	struct device *parent;
 +	struct cdev cdev;
 +	dev_t devt;
++	int alarm;
 +};
 +
 +/* global so it can be destroyed when module is removed */
 +static struct class* pds28_mms_class;
++
++/* declare wait queue */
++static DECLARE_WAIT_QUEUE_HEAD(read_wq);
 +
 +/* convert 11-bit pds28_DEMO register value to 1/10th of a Celsius */
 +static inline int pds28_mms_reg_to_mC(u16 val)
@@ -1007,17 +1012,6 @@ index 000000000000..6a09b023aaec
 +	.read = pds28_mmsdev_read,
 +	.write = pds28_mmsdev_write,
 +};
-+
-+/*static ssize_t ien_show(struct device *child, struct device_attribute *attr, char *buf)
-+{
-+	struct pds28_mms *mmsdev = dev_get_drvdata(child);
-+
-+	u32 alarm = ioread32(mmsdev->base_addr + MMS_STATUS_OFFSET);
-+	alarm &= STATUS_ALARM_MASK;
-+
-+	return sprintf(buf, "%d\n", !!alarm);
-+}
-+static DEVICE_ATTR_RO(alarm);*/
 +
 +static ssize_t ctrl_ien_show(struct device *child, struct device_attribute *attr, char *buf)
 +{
@@ -1148,47 +1142,46 @@ index 000000000000..6a09b023aaec
 +}
 +static DEVICE_ATTR_RO(available_freq);
 +
-+static u32 pds28_mms_data_to_mV(u32 data, u32 reso)
++static u32 pds28_data_to_mV(u16 data, u8 reso)
 +{
-+	u32 result = 0;	
-+	data = data & DATA_MASK;
++	u32 result = 0;
 +	switch (reso) {
 +	case 0:
 +		data = data >> 4;
 +		result += (data >> 7) * 1000;
-+		result += (data & 0x00000001) ? 7 : 0;
-+		result += (data & 0x00000002) ? 15 : 0;
-+		result += (data & 0x00000004) ? 31 : 0 ;
-+		result += (data & 0x00000008) ? 62 : 0;
-+		result += (data & 0x00000010) ? 125 : 0;
-+		result += (data & 0x00000020) ? 250 : 0;
-+		result += (data & 0x00000040) ? 500 : 0;
++		result += (data & 0x0001) ? 7 : 0;
++		result += (data & 0x0002) ? 15 : 0;
++		result += (data & 0x0004) ? 31 : 0;
++		result += (data & 0x0008) ? 62 : 0;
++		result += (data & 0x0010) ? 125 : 0;
++		result += (data & 0x0020) ? 250 : 0;
++		result += (data & 0x0040) ? 500 : 0;
 +		return result;
 +	case 1:
 +		data = data >> 8;
 +		result += (data >> 3) * 1000;
-+		result += (data & 0x00000001) ? 125 : 0;
-+		result += (data & 0x00000002) ? 250 : 0;
-+		result += (data & 0x00000004) ? 500 : 0;
-+		return result; 
++		result += (data & 0x0001) ? 125 : 0;
++		result += (data & 0x0002) ? 250 : 0;
++		result += (data & 0x0004) ? 500 : 0;
++		return result;
 +	default:
 +		return -EINVAL;
-+	} 
++	}
 +}
++
 +static ssize_t data_show(struct device *child, struct device_attribute *attr, char *buf)
 +{
 +	struct pds28_mms *mmsdev = dev_get_drvdata(child);
 +
 +	u32 data = ioread32(mmsdev->base_addr + MMS_DATA_OFFSET);
-+	u32 reso = ioread32(mmsdev->base_addr + MMS_CTRL_OFFSET) & CTRL_RES_MASK;
++	u32 reso = ioread32(mmsdev->base_addr + MMS_CTRL_OFFSET) & CTRL_RES_MASK ? 1 : 0;
 +	data &= DATA_MASK;
-+
-+	return sprintf(buf, "%d\n", pds28_mms_data_to_mV(data, reso ? 1 : 0));
++	
++	return sprintf(buf, "%d\n", pds28_data_to_mV(data, reso));
 +}
 +static DEVICE_ATTR_RO(data);
 +
 +static struct attribute *pds28_mms_attrs[] = {
-+	//&dev_attr_alarm.attr,
 +	&dev_attr_ctrl_ien.attr,
 +	&dev_attr_ctrl_en.attr,
 +	&dev_attr_ctrl_res.attr,
@@ -1205,8 +1198,8 @@ index 000000000000..6a09b023aaec
 +{
 +	struct pds28_mms *mmsdev = data;
 +
-+	pr_info("ALARM received\n");
-+
++	sysfs_notify(&mmsdev->dev->kobj, NULL, "data");
++	mmsdev->alarm = 1;
 +	iowrite32(0, mmsdev->base_addr + MMS_STATUS_OFFSET);
 +
 +	return IRQ_HANDLED;
