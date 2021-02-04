@@ -67,9 +67,7 @@ static void *i2c_function(void *arg)
 		temp = (float)data/16;
 		sprintf(query , "INSERT  INTO  Temperature(Time , Data) VALUES  (%u,%f);",(unsigned)time(NULL), temp);
 		pthread_mutex_lock(&db_mutex);
-		rc = sqlite3_exec(db, query , 0, 0, &err_msg);
-		if (rc != SQLITE_OK) 
-			printf("%s\n",sqlite3_errmsg(db));
+		while(sqlite3_exec(db, query , 0, 0, &err_msg) != SQLITE_OK);
 		pthread_mutex_unlock(&db_mutex); 
 	}
 }
@@ -103,9 +101,7 @@ static void *mms_function(void *arg)
 			lseek(pfd.fd, 0, SEEK_SET);
 			sprintf(query , "INSERT  INTO  Samples(Time , Data) VALUES  (%u,%f);",(unsigned)time(NULL), volt);
 			pthread_mutex_lock(&db_mutex);
-			rc = sqlite3_exec(db, query , 0, 0, &err_msg);
-			if (rc != SQLITE_OK) 
-				printf("%s\n",sqlite3_errmsg(db));
+			while(sqlite3_exec(db, query , 0, 0, &err_msg) != SQLITE_OK);
 			pthread_mutex_unlock(&db_mutex); 
 		}
 	}
