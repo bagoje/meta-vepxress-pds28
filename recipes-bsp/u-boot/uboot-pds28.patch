@@ -106,10 +106,10 @@ index 0000000000..1f5701fb50
 +
 diff --git a/include/configs/vexpress_pds28_common.h b/include/configs/vexpress_pds28_common.h
 new file mode 100644
-index 0000000000..372b77acef
+index 0000000000..d61d8aedc2
 --- /dev/null
 +++ b/include/configs/vexpress_pds28_common.h
-@@ -0,0 +1,255 @@
+@@ -0,0 +1,269 @@
 +/* SPDX-License-Identifier: GPL-2.0+ */
 +/*
 + * (C) Copyright 2011 ARM Limited
@@ -138,6 +138,20 @@ index 0000000000..372b77acef
 +#define PDS_VE_UART0           (0x0000d000)
 +#define PDS_VE_TIMER01         (0x00009000)
 +#define PDS_VE_MMCI            (0x0001b000)
++
++#ifdef CONFIG_BOOTDELAY
++#undef CONFIG_BOOTDELAY
++#endif
++#define CONFIG_BOOTDELAY 0
++
++#ifdef CONFIG_BOOTCOMMAND
++#undef CONFIG_BOOTCOMMAND
++#endif
++#define CONFIG_BOOTCOMMAND \
++	"setenv bootargs console=ttyAMA0,115200 root=/dev/mmcblk0p2 init=/sbin/init rootwait rw;" \
++	"fatload mmc 0:1 82000000 zImage;" \
++	"fatload mmc 0:1 88000000 vexpress-pds28.dtb;" \
++	"bootz 82000000 - 88000000;"
 +
 +#define V2M_PERIPH_OFFSET(x)   (x << 12)
 +#define V2M_SYSREGS            (V2M_PA_CS7 + V2M_PERIPH_OFFSET(0))
