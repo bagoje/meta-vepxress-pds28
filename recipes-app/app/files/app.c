@@ -65,7 +65,6 @@ static void *i2c_function(void *arg)
 		data = ((int8_t)buff[1] << 4);
 		data = data | (buff[0] >> 4);
 		temp = (float)data/16;
-		printf("temp: %f\n", temp);
 		sprintf(query , "INSERT  INTO  Temperature(Time , Data) VALUES  (%u,%f);",(unsigned)time(NULL), temp);
 		pthread_mutex_lock(&db_mutex);
 		rc = sqlite3_exec(db, query , 0, 0, &err_msg);
@@ -101,7 +100,6 @@ static void *mms_function(void *arg)
 		if (ret > 0) {
 			ret = read(pfd.fd, value, sizeof(value));
 			volt = (float)strtol(value, NULL, 10)/1000;
-			printf("samp: %f\n", volt);
 			lseek(pfd.fd, 0, SEEK_SET);
 			sprintf(query , "INSERT  INTO  Samples(Time , Data) VALUES  (%u,%f);",(unsigned)time(NULL), volt);
 			pthread_mutex_lock(&db_mutex);
