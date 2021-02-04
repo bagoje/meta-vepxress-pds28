@@ -1,0 +1,132 @@
+#!/bin/sh
+
+echo "Content-type: text/html"
+echo ""
+
+cat << EOF
+<html>
+<head>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.1.4/Chart.min.js"></script>
+<script>
+setTimeout(function(){
+   window.location.reload(1);
+}, 5000);
+</script>
+<style>
+.container {
+  width: 80%;
+  margin: 15px auto;
+}
+</style>
+</head>
+
+<body>
+<div class="container">
+<canvas id="myChart"></canvas>
+</div>
+<script>
+var samplesTime = [
+EOF
+
+sqlite3 /www/test.db << EOF
+.mode csv
+.separator , ,
+select Time from Samples order by Time DESC limit 100;
+EOF
+
+cat << EOF
+].reverse();
+
+var samplesData = [
+EOF
+
+sqlite3 /www/test.db << EOF
+.mode csv
+.separator , ,
+select Data from Samples order by Time DESC limit 100;
+EOF
+
+cat << EOF
+].reverse();
+
+var tempTime = [
+EOF
+
+sqlite3 /www/test.db << EOF
+.mode csv
+.separator , ,
+select Time from Temperature order by Time DESC limit 100;
+EOF
+
+cat << EOF
+].reverse();
+
+var tempData = [
+EOF
+
+sqlite3 /www/test.db << EOF
+.mode csv
+.separator , ,
+select Data from Temperature order by Time DESC limit 100;
+EOF
+
+cat << EOF
+].reverse();
+
+var samples = [];
+for (var i = 0; i < samplesTime.length; i++) {
+    samples.push({x:samplesTime[i], y:samplesData[i]});
+}
+
+var temp = [];
+
+for (var i = 0; i < tempTime.length; i++) {
+    if (tempTime[i] >= samplesTime[0]) {
+        temp.push({x:tempTime[i], y:tempData[i]});
+    }
+}
+
+var ctx = document.getElementById('myChart').getContext('2d');
+var myChart = new Chart(ctx, {
+    type: 'scatter',
+    data: {
+        labels: samplesTime,
+        datasets: [{
+            label: 'samples',
+            yAxisID: 's',
+            data: samples,
+            backgroundColor: "rgba(153,255,51,0.4)"
+        }, {
+            label: 'temp',
+            yAxisID: 't',
+            data: temp,
+            backgroundColor: "rgba(20,0,130,0.7)"
+        }]
+    },
+    options: {
+        scales: {
+            xAxes: [{
+                display:false,
+                ticks : {
+                        min: Math.min.apply(null,samplesTime),
+                        max: Math.max.apply(null,samplesTime)
+                },
+            }],
+            yAxes: [{
+                id: 's',
+                type: 'linear',
+                position: 'left',
+            }, {
+                id: 't',
+                type: 'linear',
+                position: 'right',
+            }]
+        },
+        animation : false
+    }
+});
+</script>
+</body>
+</html>
+EOF
+
